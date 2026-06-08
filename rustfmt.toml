@@ -1,0 +1,13 @@
+edition = "2024"
+max_width = 100
+tab_spaces = 4
+use_small_heuristics = "Max"
+newline_style = "Unix"
+format_strings = true
+format_macro_matchers = true
+format_macro_bodies = true
+group_imports = "StdExternalCrate"
+imports_granularity = "Crate"
+reorder_impl_items = true
+reorder_modules = true
+version = "Two"
