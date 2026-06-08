@@ -1,4 +1,4 @@
-use criterion::{black_box, Criterion};
+use criterion::Criterion;
 
 pub fn bench_throughput(_c: &mut Criterion) {
     // Will be populated during implementation
