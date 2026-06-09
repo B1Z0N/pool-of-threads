@@ -2,34 +2,38 @@
 
 Project context for AI coding assistants (Cursor, Copilot, Aider, etc.).
 
-## Rules
+## What this project is
 
-1. No async/await. This is a sync-only project using OS threads.
-2. No Tokio. Dependencies are crossbeam, parking_lot, once_cell only.
-3. Every `unsafe` block gets a `// SAFETY:` comment explaining the invariant.
-4. Lock-free data structures must have tests with loom or stress runs.
-5. All public API is documented with doc-tests where possible.
-6. Benchmarks go in `benches/` using criterion, harness = false.
-7. CI (future): `cargo fmt --check`, `cargo clippy -- -D warnings`, `cargo test`, `cargo bench --no-run`.
+An educational Rust project that builds a work-stealing thread pool scheduler from
+scratch. The goal is to deeply understand how concurrent schedulers work: how work is
+distributed across threads, how idle threads find tasks without contention, how threads
+park and wake efficiently, and how to shut everything down cleanly. There is no
+shortcuts — every primitive is built and reasoned about, not imported and trusted.
 
-## Project Map
+## How you can help
 
-```
-src/
-  main.rs        — CLI entry point (eventually: config + spawn + demo)
-  lib.rs         — Public API, module declarations
-  pool.rs        — ThreadPool struct, spawn/shutdown/park
-  worker.rs      — Worker thread loop, work-stealing logic
-  task.rs        — Task trait / type-erased closure wrapper
-  metrics.rs     — Optional counters (tasks completed, steals, etc.)
-benches/
-  throughput.rs  — Criterion benchmarks
-tests/
-  integration.rs — Integration tests
-```
+- **Design guidance** — when the next piece of the scheduler needs to be wired together,
+  help think through the ownership model, the threading contract, and the failure modes
+  before any code is written.
 
-## Notes
+- **Concurrency correctness** — flag data races, missed memory ordering constraints,
+  incorrect assumptions about thread visibility, or unsafe blocks that lack a convincing
+  safety argument.
 
-- This is a learning project. Prioritize readability and correctness over micro-optimizations.
-- Use `std::thread::Builder` with stack sizes — not just `std::thread::spawn`.
-- Shutdown: first set an atomic flag, then unpark all workers, then join handles.
+- **Explaining tradeoffs** — this is a learning project. When there are multiple ways to
+  solve something (different queue strategies, parking strategies, shutdown protocols),
+  explain the tradeoffs rather than picking one silently.
+
+- **Test scaffolding** — concurrent code is notoriously hard to test. Suggest test shapes
+  that surface real races: stress tests, ordering checks, shutdown-under-load scenarios.
+
+- **Incremental progress** — the project aims to be done in a week. Help scope tasks to
+  be completable in a single session, and flag when something risks becoming a rabbit
+  hole.
+
+## What to avoid
+
+- Reaching for external abstractions that would hide the learning — the whole point is to
+  build and understand these primitives directly.
+- Suggesting optimizations before correctness is established.
+- Silently working around a misunderstanding in the existing code — surface it instead.

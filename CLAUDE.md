@@ -2,43 +2,41 @@
 
 Context for Claude Code sessions in this project.
 
-## Project
+## What this project is
 
-A work-stealing thread pool scheduler written from scratch in Rust. Educational project
-to refresh Rust knowledge and learn concurrency primitives.
+An educational Rust project that builds a work-stealing thread pool scheduler entirely
+from scratch. The goal is to deeply understand concurrent scheduling: how tasks move from
+a submission queue onto per-worker queues, how idle workers steal tasks from busy ones
+without bottlenecking on a single lock, how threads park and wake with minimal overhead,
+and how a clean shutdown drains in-flight work and joins every thread safely.
 
-## Tech Stack
+This is a week-long focused project — scope decisions should favor learning and
+completeness over perfection.
 
-- **Rust edition 2024**, stable toolchain
-- **crossbeam-deque** for work-stealing queues (Chase-Lev)
-- **parking_lot** for fast mutexes and condvars
-- **criterion** for benchmarks
-- No async runtime — pure OS threads and atomics
+## How Claude can help
 
-## Build & Test
+- **Planning the next step** — before starting a new module or wiring pieces together,
+  talk through the design: what invariants need to hold, what the ownership story is,
+  where concurrency bugs typically appear in this kind of code.
 
-```bash
-cargo build
-cargo test
-cargo test -- --nocapture          # show println output
-cargo bench                         # criterion benchmarks
-cargo lint                          # alias: clippy with -D warnings
-cargo fmt -- --check                # check formatting
-```
+- **Reviewing safety** — when unsafe code is written or modified, Claude should audit the
+  safety argument, not just accept the comment at face value. Point out if an invariant
+  is incomplete or if the surrounding safe code can violate it.
 
-## Code Style
+- **Explaining concepts** — this is a learning project. Whenever a tradeoff is made
+  (queue strategy, parking strategy, atomic ordering choice, shutdown protocol), explain
+  what alternatives exist and what each costs.
 
-- `rustfmt.toml` is authoritative — run `cargo fmt` before committing
-- Modules: one concept per file, re-exported via `lib.rs`
-- Unsafe blocks: minimal, isolated, and commented with safety invariants
-- Atomics: prefer `Ordering::Acquire/Release` over `SeqCst` unless needed
-- Tests: inline `#[cfg(test)] mod tests` in each module
+- **Debugging concurrency** — when tests fail intermittently or a scenario is hard to
+  reason about, help construct a minimal reproducer and reason through the happens-before
+  relationships.
 
-## Pitfalls
+- **Keeping scope tight** — if a task is drifting into a rabbit hole, flag it. Suggest
+  the smallest version of a thing that still teaches the lesson.
 
-- macOS has no `pthread_spinlock`, use `parking_lot` instead of `std::sync`
-- `crossbeam-deque` `Injector` and `Worker` have different push/pop semantics
-- Thread parking must handle spurious wakeups
-- Shutdown coordination: use atomic flags + barrier, not just a condvar
-- `cargo build --release` on macOS may produce x86_64 binary on ARM if
-  rustup was installed under Rosetta — verify with `file target/release/pool-of-threads`
+## What to avoid
+
+- Suggesting external abstractions that would hide the learning — the whole point is to
+  build and reason about the primitives directly.
+- Applying optimizations before the code is correct and understood.
+- Making silent choices: if there is a meaningful tradeoff, surface it.
