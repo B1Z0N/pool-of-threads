@@ -1,4 +1,7 @@
-use std::{sync::{Arc, Mutex, mpsc}, thread::{self, JoinHandle}};
+use std::{
+    sync::{Arc, Mutex, mpsc},
+    thread::{self, JoinHandle},
+};
 
 use crate::Task;
 
@@ -8,7 +11,6 @@ pub struct ThreadPool {
 }
 
 struct Worker {
-    id: usize,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -27,7 +29,7 @@ impl Worker {
                 }
             }
         });
-        Self { id, thread: Some(thread) }
+        Self { thread: Some(thread) }
     }
 }
 
@@ -35,19 +37,13 @@ impl ThreadPool {
     pub fn new(n: usize) -> Self {
         let (sender, receiver) = mpsc::channel();
         let receiver = Arc::new(Mutex::new(receiver));
-        let workers = (0..n)
-            .map(|id| {
-                Worker::new(id, receiver.clone())
-            }).collect();
-        Self {
-            workers,
-            sender: Some(sender),
-        }
+        let workers = (0..n).map(|id| Worker::new(id, receiver.clone())).collect();
+        Self { workers, sender: Some(sender) }
     }
 
     pub fn spawn(&self, task: impl FnOnce() + Send + 'static) {
         let task = Task::new(task);
-        if let Err(_) = self.sender.as_ref().unwrap().send(task) {
+        if self.sender.as_ref().unwrap().send(task).is_err() {
             println!("Pool couldn't schedule a task.");
         }
     }
@@ -58,7 +54,7 @@ impl Drop for ThreadPool {
         let sender = self.sender.take();
         drop(sender);
         for worker in &mut self.workers {
-            worker.thread.take().unwrap().join();
+            let _ = worker.thread.take().unwrap().join();
         }
     }
 }
@@ -74,7 +70,7 @@ mod tests {
 
     #[test]
     fn create_pool_with_n_threads() {
-        let pool = ThreadPool::new(4);
+        let _pool = ThreadPool::new(4);
     }
 
     // ── basic execution ─────────────────────────────────────────────
@@ -123,10 +119,7 @@ mod tests {
         });
         drop(pool);
 
-        assert!(
-            different.load(Ordering::SeqCst),
-            "task ran on calling thread instead of a worker"
-        );
+        assert!(different.load(Ordering::SeqCst), "task ran on calling thread instead of a worker");
     }
 
     // ── concurrent submission ───────────────────────────────────────
