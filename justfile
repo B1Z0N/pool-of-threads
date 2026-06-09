@@ -1,35 +1,34 @@
-_default:
-  cargo := "source ~/.cargo/env && cargo"
+set dotenv-load := true
 
 # Build
 build:
-  {{cargo}} build
+  cargo build
 build-release:
-  {{cargo}} build --release
+  cargo build --release
 
 # Test
 test:
-  {{cargo}} test
+  cargo test
 test-nocapture:
-  {{cargo}} test -- --nocapture
+  cargo test -- --nocapture
 
 # Lint
 fmt:
-  {{cargo}} fmt
+  cargo fmt
 fmt-check:
-  {{cargo}} fmt -- --check
+  cargo fmt -- --check
 lint:
-  {{cargo}} clippy --all-targets --all-features -- -D warnings
+  cargo clippy --all-targets --all-features -- -D warnings
 check:
-  {{cargo}} check --all-targets --all-features
+  cargo check --all-targets --all-features
 
 # Bench
 bench:
-  {{cargo}} bench
+  cargo bench
 
 # Clean
 clean:
-  {{cargo}} clean
+  cargo clean
 
 # All-in-one CI preflight
 ci:
@@ -39,12 +38,12 @@ ci:
   just bench-compile
 
 bench-compile:
-  {{cargo}} bench --no-run
+  cargo bench --no-run
 
 # Watch mode
 watch:
-  {{cargo}} watch -x check -x test
+  cargo watch -x check -x test
 
 # Docs
 doc:
-  {{cargo}} doc --open
+  cargo doc --open

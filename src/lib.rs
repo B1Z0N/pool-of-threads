@@ -15,3 +15,9 @@
 //! pool.spawn(|| { /* work */ });
 //! pool.shutdown();
 //! ```
+
+pub mod pool;
+pub mod task;
+
+pub use pool::ThreadPool;
+pub use task::Task;
