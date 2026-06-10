@@ -1,13 +1,47 @@
 use std::{
-    sync::{Arc, Mutex, mpsc},
+    sync::atomic::{AtomicBool, Ordering},
+    sync::Arc,
     thread::{self, JoinHandle},
 };
+
+use crossbeam::deque::{self as cbdq, Steal::Success};
 
 use crate::Task;
 
 pub struct ThreadPool {
+    global: Arc<cbdq::Injector<Task>>,
+    shutdown: Arc<AtomicBool>,
     workers: Vec<Worker>,
-    sender: Option<mpsc::Sender<Task>>,
+}
+
+impl ThreadPool {
+    pub fn new(n: usize) -> Self {
+        let global = Arc::new(cbdq::Injector::new());
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let workers = (0..n)
+            .map(|_| Worker::new(global.clone(), shutdown.clone()))
+            .collect();
+        Self { global, shutdown, workers }
+    }
+
+    pub fn spawn(&self, task: impl FnOnce() + Send + 'static) {
+        if self.shutdown.load(Ordering::Acquire) {
+            return;
+        }
+        let task = Task::new(task);
+        self.global.push(task);
+    }
+}
+
+impl Drop for ThreadPool {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Release);
+        for worker in &mut self.workers {
+            if let Some(thread) = worker.thread.take() {
+                thread.join().expect("worker thread panicked during shutdown");
+            }
+        }
+    }
 }
 
 struct Worker {
@@ -15,47 +49,22 @@ struct Worker {
 }
 
 impl Worker {
-    fn new(id: usize, receiver: Arc<Mutex<mpsc::Receiver<Task>>>) -> Self {
+    fn new(global: Arc<cbdq::Injector<Task>>, shutdown: Arc<AtomicBool>) -> Self {
         let thread = thread::spawn(move || {
             loop {
-                let message = receiver.lock().unwrap().recv();
-
-                match message {
-                    Ok(task) => task.run(),
-                    Err(_) => {
-                        println!("Worker {} disconnected. Shutting down.", id);
-                        break;
-                    }
+                if let Success(task) = global.steal() {
+                    task.run();
+                    continue;
                 }
+
+                if shutdown.load(Ordering::Acquire) && global.is_empty() {
+                    break;
+                }
+
+                thread::yield_now();
             }
         });
         Self { thread: Some(thread) }
-    }
-}
-
-impl ThreadPool {
-    pub fn new(n: usize) -> Self {
-        let (sender, receiver) = mpsc::channel();
-        let receiver = Arc::new(Mutex::new(receiver));
-        let workers = (0..n).map(|id| Worker::new(id, receiver.clone())).collect();
-        Self { workers, sender: Some(sender) }
-    }
-
-    pub fn spawn(&self, task: impl FnOnce() + Send + 'static) {
-        let task = Task::new(task);
-        if self.sender.as_ref().unwrap().send(task).is_err() {
-            println!("Pool couldn't schedule a task.");
-        }
-    }
-}
-
-impl Drop for ThreadPool {
-    fn drop(&mut self) {
-        let sender = self.sender.take();
-        drop(sender);
-        for worker in &mut self.workers {
-            let _ = worker.thread.take().unwrap().join();
-        }
     }
 }
 
