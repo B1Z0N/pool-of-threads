@@ -1,6 +1,6 @@
 use std::{
-    sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
+    sync::atomic::{AtomicBool, Ordering},
     thread::{self, JoinHandle},
 };
 
@@ -17,10 +17,9 @@ pub struct ThreadPool {
 impl ThreadPool {
     pub fn new(n: usize) -> Self {
         let global = Arc::new(cbdq::Injector::new());
+
         let shutdown = Arc::new(AtomicBool::new(false));
-        let workers = (0..n)
-            .map(|_| Worker::new(global.clone(), shutdown.clone()))
-            .collect();
+        let workers = (0..n).map(|_| Worker::new(global.clone(), shutdown.clone())).collect();
         Self { global, shutdown, workers }
     }
 
