@@ -1,6 +1,8 @@
 use std::{
-    sync::Arc,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
     thread::{self, JoinHandle},
 };
 
@@ -9,61 +11,80 @@ use crossbeam::deque::{self as cbdq, Steal::Success};
 use crate::Task;
 
 pub struct ThreadPool {
-    global: Arc<cbdq::Injector<Task>>,
+    queue: Arc<cbdq::Injector<Task>>,
     shutdown: Arc<AtomicBool>,
-    workers: Vec<Worker>,
+    threads: Vec<JoinHandle<()>>,
 }
 
 impl ThreadPool {
     pub fn new(n: usize) -> Self {
-        let global = Arc::new(cbdq::Injector::new());
-
+        let queue = Arc::new(cbdq::Injector::<Task>::new());
         let shutdown = Arc::new(AtomicBool::new(false));
-        let workers = (0..n).map(|_| Worker::new(global.clone(), shutdown.clone())).collect();
-        Self { global, shutdown, workers }
+
+        let mut workers = Vec::with_capacity(n);
+        let mut stealers = Vec::with_capacity(n);
+        for _ in 0..n {
+            let worker = cbdq::Worker::new_fifo();
+            stealers.push(worker.stealer());
+            workers.push(worker);
+        }
+        let stealers: Arc<[cbdq::Stealer<Task>]> = stealers.into();
+
+        let threads = workers
+            .into_iter()
+            .enumerate()
+            .map(|(id, worker)| {
+                let queue = queue.clone();
+                let shutdown = shutdown.clone();
+                let stealers = stealers.clone();
+                thread::spawn(move || {
+                    loop {
+                        if let Some(task) = worker.pop() {
+                            task.run();
+                            continue;
+                        }
+
+                        if let Success(task) = queue.steal_batch_and_pop(&worker) {
+                            task.run();
+                            continue;
+                        }
+
+                        let mut i = rand::random_range(0..n);
+                        if i == id {
+                            i = (i + 1) % n;
+                        }
+
+                        if let Success(task) = stealers[i].steal() {
+                            task.run();
+                            continue;
+                        }
+
+                        if queue.is_empty()
+                            && worker.is_empty()
+                            && shutdown.load(Ordering::Acquire)
+                            && stealers.iter().all(|s| s.is_empty())
+                        {
+                            break;
+                        }
+                    }
+                })
+            })
+            .collect();
+        Self { queue, shutdown, threads }
     }
 
     pub fn spawn(&self, task: impl FnOnce() + Send + 'static) {
-        if self.shutdown.load(Ordering::Acquire) {
-            return;
-        }
         let task = Task::new(task);
-        self.global.push(task);
+        self.queue.push(task);
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
         self.shutdown.store(true, Ordering::Release);
-        for worker in &mut self.workers {
-            if let Some(thread) = worker.thread.take() {
-                thread.join().expect("worker thread panicked during shutdown");
-            }
+        for thread in self.threads.drain(..) {
+            thread.join().unwrap();
         }
-    }
-}
-
-struct Worker {
-    thread: Option<JoinHandle<()>>,
-}
-
-impl Worker {
-    fn new(global: Arc<cbdq::Injector<Task>>, shutdown: Arc<AtomicBool>) -> Self {
-        let thread = thread::spawn(move || {
-            loop {
-                if let Success(task) = global.steal() {
-                    task.run();
-                    continue;
-                }
-
-                if shutdown.load(Ordering::Acquire) && global.is_empty() {
-                    break;
-                }
-
-                thread::yield_now();
-            }
-        });
-        Self { thread: Some(thread) }
     }
 }
 
