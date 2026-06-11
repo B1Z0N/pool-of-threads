@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# ── Pool of Threads pre-push hook ──────────────────────────────────
+# Runs the exact same checks as CI (just ci).
+# If any step fails, the push is blocked.
+#
+# To skip (emergency only):  git push --no-verify
+# To install:                just install-hooks
+#                            or: cp .githooks/pre-push .git/hooks/pre-push
+
+echo "╔══════════════════════════════════════════════════════╗"
+echo "║  Running CI preflight (just ci) before push...      ║"
+echo "╚══════════════════════════════════════════════════════╝"
+echo ""
+
+# Run the CI pipeline — identical to what CI does
+if just ci; then
+    echo ""
+    echo "══ Pre-push CI passed. Pushing..."
+    exit 0
+else
+    echo ""
+    echo "══ Pre-push CI FAILED. Push blocked."
+    echo "   Fix the issues above and try again."
+    echo "   To override (not recommended): git push --no-verify"
+    exit 1
+fi

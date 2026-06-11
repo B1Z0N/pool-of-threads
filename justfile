@@ -44,6 +44,12 @@ bench-compile:
 watch:
   cargo watch -x check -x test
 
+# Git hooks
+install-hooks:
+  @mkdir -p .git/hooks
+  @ln -sf ../../.githooks/pre-push .git/hooks/pre-push
+  @echo "Pre-push hook installed (runs 'just ci' before every push)"
+
 # Docs
 doc:
   cargo doc --open
