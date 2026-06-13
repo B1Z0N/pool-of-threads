@@ -30,6 +30,10 @@ bench:
 clean:
   cargo clean
 
+# Run
+run:
+  cargo run
+
 # All-in-one CI preflight
 ci:
   just fmt-check

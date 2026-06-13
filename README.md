@@ -28,7 +28,7 @@ benches/
   throughput.rs — Criterion benchmarks
 tests/
   work_stealing.rs  — barrier-orchestrated proof that stealing happens
-  shutdown_race.rs  — concurrent spawn + drop stress
+  concurrent_submission.rs  — concurrent spawn + drop stress
   stress.rs         — 10k+ tasks, 8 submitters, counter verification
   starvation.rs     — injector flood + heavy/light coexistence
   leak.rs           — pool lifecycle smoke test + native leak tool docs
@@ -37,10 +37,12 @@ tests/
 ## Build
 
 ```bash
-cargo build
-cargo test
-cargo bench
-cargo run    # runs the demo — shows scaling across thread counts
+just --help
+
+just build
+just test
+just bench
+just run    # runs the demo — shows scaling across thread counts
 ```
 
 ## Usage
