@@ -30,7 +30,6 @@ just test
 - `cargo fmt` is non-negotiable — `rustfmt.toml` is the single source of truth
 - `cargo clippy -- -D warnings` must pass clean
 - Every `unsafe` block gets a `// SAFETY:` comment
-- Prefer `parking_lot` over `std::sync` for Mutex, RwLock, Condvar
 - Ordering: prefer `Acquire`/`Release` over `SeqCst`
 
 ## Project Structure
@@ -39,10 +38,8 @@ just test
 src/
   main.rs        — CLI entry point
   lib.rs         — Public API + module declarations
-  pool.rs        — ThreadPool: spawn, shutdown, park
-  worker.rs      — Worker thread loop, work-stealing
-  task.rs        — Type-erased task trait / closure wrapper
-  metrics.rs     — Optional counters
+  pool.rs        — ThreadPool: spawn, work-stealing loop, parking, shutdown
+  task.rs        — Type-erased closure wrapper
 benches/
   throughput.rs  — Criterion benchmarks
 ```
