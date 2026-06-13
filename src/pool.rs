@@ -1,12 +1,15 @@
 use std::{
     sync::{
-        Arc,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, Ordering},
     },
     thread::{self, JoinHandle},
 };
 
-use crossbeam::deque::{self as cbdq, Steal::Success};
+use crossbeam::deque::{
+    self as cbdq,
+    Steal::{self},
+};
 
 use crate::Task;
 
@@ -14,6 +17,7 @@ pub struct ThreadPool {
     queue: Arc<cbdq::Injector<Task>>,
     shutdown: Arc<AtomicBool>,
     threads: Vec<JoinHandle<()>>,
+    parking: Arc<(Mutex<()>, Condvar)>,
 }
 
 impl ThreadPool {
@@ -29,6 +33,7 @@ impl ThreadPool {
             workers.push(worker);
         }
         let stealers: Arc<[cbdq::Stealer<Task>]> = stealers.into();
+        let parking = Arc::new((Mutex::new(()), Condvar::new()));
 
         let threads = workers
             .into_iter()
@@ -37,51 +42,94 @@ impl ThreadPool {
                 let queue = queue.clone();
                 let shutdown = shutdown.clone();
                 let stealers = stealers.clone();
+                let parking = parking.clone();
+
                 thread::spawn(move || {
-                    loop {
+                    let mut steal_start = rand::random_range(0..n);
+                    'worker: loop {
+                        steal_start = (steal_start + 1) % n;
                         if let Some(task) = worker.pop() {
                             task.run();
                             continue;
                         }
 
-                        if let Success(task) = queue.steal_batch_and_pop(&worker) {
-                            task.run();
+                        match queue.steal_batch_and_pop(&worker) {
+                            Steal::Success(task) => {
+                                {
+                                    let (lock, cvar) = &*parking;
+                                    let _guard = lock.lock().unwrap();
+                                    cvar.notify_all();
+                                }
+                                task.run();
+                                continue;
+                            }
+                            Steal::Retry => continue,
+                            Steal::Empty => {}
+                        }
+
+                        if n > 1 {
+                            for offset in 0..n {
+                                let i = (steal_start + offset) % n;
+                                if i == id {
+                                    continue;
+                                }
+
+                                match stealers[i].steal() {
+                                    Steal::Success(task) => {
+                                        task.run();
+                                        continue 'worker;
+                                    }
+                                    Steal::Retry => continue 'worker,
+                                    Steal::Empty => {}
+                                }
+                            }
+                        }
+
+                        if shutdown.load(Ordering::Acquire) {
+                            if queue.is_empty() && stealers.iter().all(|s| s.is_empty()) {
+                                break;
+                            }
+                            std::thread::yield_now();
                             continue;
                         }
 
-                        let mut i = rand::random_range(0..n);
-                        if i == id {
-                            i = (i + 1) % n;
-                        }
-
-                        if let Success(task) = stealers[i].steal() {
-                            task.run();
-                            continue;
-                        }
+                        let (lock, cvar) = &*parking;
+                        let mut guard = lock.lock().unwrap();
 
                         if queue.is_empty()
-                            && worker.is_empty()
-                            && shutdown.load(Ordering::Acquire)
                             && stealers.iter().all(|s| s.is_empty())
+                            && !shutdown.load(Ordering::Acquire)
                         {
-                            break;
+                            guard = cvar.wait(guard).unwrap();
                         }
                     }
                 })
             })
             .collect();
-        Self { queue, shutdown, threads }
+        Self { queue, shutdown, threads, parking }
     }
 
     pub fn spawn(&self, task: impl FnOnce() + Send + 'static) {
         let task = Task::new(task);
         self.queue.push(task);
+
+        let (lock, cvar) = &*self.parking;
+        {
+            let _guard = lock.lock().unwrap();
+            cvar.notify_one();
+        }
     }
 }
 
 impl Drop for ThreadPool {
     fn drop(&mut self) {
-        self.shutdown.store(true, Ordering::Release);
+        let (lock, cvar) = &*self.parking;
+        {
+            let _guard = lock.lock().unwrap();
+            self.shutdown.store(true, Ordering::Release);
+            cvar.notify_all();
+        }
+
         for thread in self.threads.drain(..) {
             thread.join().unwrap();
         }
