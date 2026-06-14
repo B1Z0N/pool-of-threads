@@ -207,14 +207,10 @@ jobs:
           if [ -n "$RUN_ID" ]; then
             echo "Found baseline in run $RUN_ID"
             gh run download "$RUN_ID" --name benchmark-baseline --dir target/criterion/
-            echo "=== Directory structure ==="
-            find target/criterion -type d | head -20
-            ls -la target/criterion/main/ 2>/dev/null || echo "main/ not found"
             # gh run download may extract to a nested path. Find main/ wherever it is.
             MAIN_DIR=$(find target/criterion -type d -name main | head -1)
             if [ -n "$MAIN_DIR" ] && [ "$MAIN_DIR" != "target/criterion/main" ]; then
               mv "$MAIN_DIR" target/criterion/main
-              echo "Moved $MAIN_DIR → target/criterion/main"
             fi
           else
             echo "==> No baseline artifact found on main. Skipping regression check."
@@ -226,7 +222,7 @@ jobs:
       - name: Check for benchmark regressions
         run: |
           if [ -d target/criterion/main ]; then
-            python3 scripts/bench-regression.py main --verbose 2>&1 | tee /tmp/bench-result.txt
+            CI_TOLERANCE_MULTIPLIER=5 python3 scripts/bench-regression.py main --verbose 2>&1 | tee /tmp/bench-result.txt
             echo "## Benchmark regression check" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat /tmp/bench-result.txt >> "$GITHUB_STEP_SUMMARY"

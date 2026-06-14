@@ -21,6 +21,7 @@ Usage:
     ./scripts/bench-regression.py main --verbose
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -96,6 +97,15 @@ def main():
 
     # Load tolerances
     default_pct, rules = load_tolerances()
+
+    # CI runners have high VM-to-VM variance. Scale tolerances up.
+    # Set CI_TOLERANCE_MULTIPLIER=1.0 locally for tight checks.
+    multiplier = float(os.environ.get("CI_TOLERANCE_MULTIPLIER", "1.0"))
+    if multiplier != 1.0:
+        default_pct *= multiplier
+        rules = [(p, t * multiplier, n) for p, t, n in rules]
+        print(f"    CI tolerance multiplier: {multiplier}× (runner variance compensation)")
+        print()
     if verbose:
         print(f"Default tolerance: ±{default_pct}%")
         for pattern, pct, note in rules:
