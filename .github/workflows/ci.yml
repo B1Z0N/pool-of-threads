@@ -64,6 +64,18 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+  # ── Loom (model-check all thread interleavings) ────────────────────
+  loom:
+    name: loom
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Model-check parking/shutdown logic
+        run: RUSTFLAGS="--cfg loom" cargo test --test loom_parking --verbose
+
   # ── ThreadSanitizer ───────────────────────────────────────────────
   tsan:
     name: tsan
