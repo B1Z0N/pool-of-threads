@@ -196,16 +196,23 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Download main baseline
-        uses: dawidd6/action-download-artifact@v6
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          workflow: ci.yml
-          workflow_conclusion: success
-          branch: main
-          name: benchmark-baseline
-          path: target/criterion/
-          if_no_artifact_found: warn
+        run: |
+          # Find latest successful CI run on main that has the benchmark-baseline artifact
+          RUN_ID=$(gh run list --workflow ci.yml --branch main --status success --limit 20 --json databaseId -q '.[].databaseId' | while read id; do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs/$id/artifacts" --jq '.artifacts[] | select(.name=="benchmark-baseline") | .id' 2>/dev/null | grep -q .; then
+              echo "$id"
+              break
+            fi
+          done)
+          if [ -n "$RUN_ID" ]; then
+            echo "Found baseline in run $RUN_ID"
+            gh run download "$RUN_ID" --name benchmark-baseline --dir target/criterion/
+          else
+            echo "==> No baseline artifact found on main. Skipping regression check."
+          fi
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for benchmark regressions
         run: |
