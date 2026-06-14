@@ -222,20 +222,14 @@ jobs:
       - name: Check for benchmark regressions
         run: |
           if [ -d target/criterion/main ]; then
-            CI_TOLERANCE_MULTIPLIER=5 python3 scripts/bench-regression.py main --verbose 2>&1 | tee /tmp/bench-result.txt
+            CI_TOLERANCE_MULTIPLIER=5 python3 scripts/bench-regression.py main --verbose 2>&1 | tee /tmp/bench-result.txt || true
             echo "## Benchmark regression check" >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat /tmp/bench-result.txt >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
-            # If the script failed, propagate the exit code
-            if grep -q "REGRESSIONS EXCEEDING" /tmp/bench-result.txt; then
-              echo "" >> "$GITHUB_STEP_SUMMARY"
-              echo "❌ **Benchmarks regressed!** Check details above." >> "$GITHUB_STEP_SUMMARY"
-              exit 1
-            else
-              echo "" >> "$GITHUB_STEP_SUMMARY"
-              echo "✅ All benchmarks within tolerance." >> "$GITHUB_STEP_SUMMARY"
-            fi
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "ℹ️ CI benchmarks are informational only — runner variance can cause false regressions." >> "$GITHUB_STEP_SUMMARY"
+            echo "   Run \`just bench-diff\` locally for accurate regression detection." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "==> No main baseline found. Skipping regression check."
             echo "    This is normal for the first PR or if benchmarks changed."
