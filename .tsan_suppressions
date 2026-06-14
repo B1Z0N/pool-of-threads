@@ -1,13 +1,21 @@
 # TSan suppressions for pool-of-threads
-# False positives from crossbeam-epoch's epoch-based garbage collection.
-# TSan cannot model epoch reclamation — it sees concurrent free + read on
-# the garbage queue inside Global::collect and flags it as a data race.
-# The epoch counter guarantees the object is only freed after all threads
-# have advanced past the epoch where it was retired.
+#
+# crossbeam uses lock-free algorithms with custom synchronization protocols
+# (epoch-based reclamation, lap-counter deque access). TSan cannot model
+# these protocols and reports false-positive data races inside crossbeam
+# internals. ASan and Loom provide complementary coverage for our code.
+#
 # See: https://github.com/crossbeam-rs/crossbeam/issues/589
 
-# Global::collect runs on multiple threads. One thread frees garbage-bag
-# nodes while another reads them from the concurrent queue.
+# crossbeam-epoch: Global::collect runs on multiple threads.
+# One thread frees garbage-bag nodes while another reads from the
+# concurrent queue. Epoch ordering guarantees safety.
 race:crossbeam_epoch::internal::Global::collect
 race:crossbeam_epoch::internal::Bag
 race:crossbeam_epoch::internal::Local
+
+# crossbeam-deque: Buffer uses volatile reads/writes with lap-counter
+# synchronization. Injector::steal_batch_and_pop and Stealer::steal
+# can concurrently access the same deque buffer — safe via atomic CAS
+# on the stealer position, which TSan cannot trace to the buffer access.
+race:crossbeam_deque::deque::Buffer

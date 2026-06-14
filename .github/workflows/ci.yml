@@ -77,10 +77,7 @@ jobs:
 
       - name: Test under TSan
         run: |
-          export TSAN_OPTIONS="suppressions=${GITHUB_WORKSPACE}/.tsan_suppressions verbosity=1"
-          echo "TSAN_OPTIONS=$TSAN_OPTIONS"
-          ls -la .tsan_suppressions
-          cat .tsan_suppressions
+          export TSAN_OPTIONS="suppressions=${GITHUB_WORKSPACE}/.tsan_suppressions"
           RUSTFLAGS="-Z sanitizer=thread" \
             cargo +nightly test \
             -Z build-std \
