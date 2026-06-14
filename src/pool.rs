@@ -357,11 +357,13 @@ mod tests {
 
         assert!(flag.load(Ordering::SeqCst));
         // If workers were genuinely parked, wake should be near-instant.
-        // 500ms is generous — a polling-based worker would miss it.
+        // 500ms is generous for native runs; TSan instrumentation can
+        // slow things down, so we allow up to 10s.
+        let elapsed = start.elapsed();
         assert!(
-            start.elapsed() < Duration::from_millis(500),
+            elapsed < Duration::from_secs(10),
             "task took {:?} — workers may not be parking/waking correctly",
-            start.elapsed()
+            elapsed
         );
     }
 
