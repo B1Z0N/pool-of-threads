@@ -125,10 +125,9 @@ impl ThreadPool {
                         let (lock, cvar) = &*parking;
                         let mut guard = lock.lock().unwrap();
 
-                        if queue.is_empty()
-                            && stealers.iter().all(|s| s.is_empty())
-                            && !shutdown.load(Ordering::Acquire)
-                        {
+                        // Single-worker pool: no stealers, skip the scan.
+                        let all_empty = n == 1 || stealers.iter().all(|s| s.is_empty());
+                        if queue.is_empty() && all_empty && !shutdown.load(Ordering::Acquire) {
                             guard = cvar.wait(guard).unwrap();
                         }
                     }

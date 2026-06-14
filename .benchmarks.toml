@@ -1,0 +1,67 @@
+# Benchmark regression tolerance configuration.
+#
+# Each entry maps a benchmark name pattern to an allowed regression
+# threshold (percentage). Benchmarks not listed here use the [default]
+# threshold.
+#
+# Patterns are matched left-to-right: first match wins. Use substring
+# matching: "throughput" matches any benchmark containing "throughput".
+#
+# Threshold semantics:
+#   If a benchmark regresses by MORE than `max_regression_pct`, CI fails.
+#
+# Calibrated 2026-06-13 using `scripts/noise-characterize.py` on
+# overhead group (park_wake: 5 runs, CV=2.27%). Other thresholds
+# estimated from criterion's internal CI bounds observed during
+# benchmark development and scaled conservatively (3-4× estimated CV).
+
+[default]
+max_regression_pct = 4.0
+
+# ── Stable: CPU-bound, low variance (estimated CV <1%) ──────────────
+
+[[rules]]
+pattern = "throughput"
+max_regression_pct = 2.0
+note = "CPU-bound throughput; criterion CI width <1%, very stable"
+
+[[rules]]
+pattern = "sequential"
+max_regression_pct = 3.0
+note = "Sequential baseline; nanosecond scale, timer precision limits accuracy"
+
+# ── Good: moderate variance (estimated CV 1-3%) ─────────────────────
+
+[[rules]]
+pattern = "scalability/workers"
+max_regression_pct = 4.0
+note = "Worker scaling; thread creation adds mild variance"
+
+[[rules]]
+pattern = "scalability/submitters"
+max_regression_pct = 5.0
+note = "Submitter scaling; concurrent submission increases variance"
+
+# ── Moderate: scheduling-dependent (estimated CV 3-5%) ──────────────
+
+[[rules]]
+pattern = "work_stealing/imbalanced"
+max_regression_pct = 6.0
+note = "Imbalanced workload; scheduling order matters, moderate variance"
+
+[[rules]]
+pattern = "overhead/per_task"
+max_regression_pct = 8.0
+note = "Per-task overhead; includes pool create/destroy, moderate variance"
+
+# ── Noisy: microbenchmarks (calibrated: park_wake CV=2.27%, 5 runs) ─
+
+[[rules]]
+pattern = "work_stealing/saturated"
+max_regression_pct = 10.0
+note = "Saturated workers; sleep-based coordination, timing-sensitive"
+
+[[rules]]
+pattern = "overhead/park_wake"
+max_regression_pct = 10.0
+note = "Park/wake microbenchmark; CV=2.27% across 5 runs, 4x=9.1%→10%"
