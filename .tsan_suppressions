@@ -1,0 +1,12 @@
+# TSan suppressions for pool-of-threads
+# False positives from crossbeam-epoch's epoch-based garbage collection.
+# TSan cannot model epoch reclamation — it sees concurrent free + read on
+# the garbage queue inside Global::collect and flags it as a data race.
+# The epoch counter guarantees the object is only freed after all threads
+# have advanced past the epoch where it was retired.
+# See: https://github.com/crossbeam-rs/crossbeam/issues/589
+
+# Global::collect runs on multiple threads. One thread frees garbage-bag
+# nodes while another reads them from the concurrent queue. Epoch ordering
+# guarantees these operations are safe, but TSan sees raw read+free.
+race:crossbeam_epoch::internal::Global::collect
