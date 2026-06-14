@@ -43,3 +43,20 @@ pub mod task;
 
 pub use pool::ThreadPool;
 pub use task::Task;
+
+/// Deterministic CPU-bound work for benchmarks.
+///
+/// Runs an LCG for `iterations` steps. On modern hardware:
+/// - 1_000 iterations ≈ 1 µs
+/// - 1_000_000 iterations ≈ 1 ms
+///
+/// Not part of the public API — only exposed so benchmarks can use it
+/// without duplicating the implementation across separate benchmark binaries.
+#[doc(hidden)]
+pub fn bench_cpu_work(iterations: u64) -> u64 {
+    let mut x: u64 = 0;
+    for _ in 0..iterations {
+        x = x.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+    }
+    x
+}

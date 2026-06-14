@@ -5,44 +5,243 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+  schedule:
+    # Soak tests run daily at 03:00 UTC
+    - cron: '0 3 * * *'
 
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
 
 jobs:
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - run: cargo fmt --all -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings
-
+  # ── standard test matrix ──────────────────────────────────────────
   test:
-    name: Test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, ${{ matrix.toolchain }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        toolchain: [stable, beta]
     steps:
-      - uses: actions/checkout@v5
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --all-targets
+      - uses: actions/checkout@v4
 
-  bench-compile:
-    name: Bench (compile check)
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.toolchain }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Test (unit + integration)
+        run: cargo test --verbose
+
+      - name: Test (proptest)
+        run: cargo test --test proptest --verbose
+        env:
+          PROPTEST_CASES: 1024
+
+      - name: Test (perturbation)
+        run: cargo test --test perturbation --verbose
+
+  # ── clippy + fmt ──────────────────────────────────────────────────
+  lint:
+    name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - run: cargo bench --no-run
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+  # ── ThreadSanitizer ───────────────────────────────────────────────
+  tsan:
+    name: tsan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test under TSan
+        run: |
+          RUSTFLAGS="-Z sanitizer=thread" \
+            cargo test \
+            -Z build-std \
+            --target x86_64-unknown-linux-gnu \
+            --lib --tests \
+            --verbose
+
+  # ── AddressSanitizer ──────────────────────────────────────────────
+  asan:
+    name: asan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rust-src
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test under ASan
+        run: |
+          RUSTFLAGS="-Z sanitizer=address" \
+            cargo test \
+            -Z build-std \
+            --target x86_64-unknown-linux-gnu \
+            --lib --tests \
+            --verbose
+
+  # ── leak check (macOS) ────────────────────────────────────────────
+  leak-check:
+    name: leak-check
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Run under leaks
+        run: |
+          MallocStackLogging=1 \
+            ./target/release/pool-of-threads &
+          PID=$!
+          sleep 3
+          leaks $PID
+          kill $PID 2>/dev/null || true
+
+  # ── soak tests ────────────────────────────────────────────────────
+  soak:
+    name: soak (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Soak — continuous concurrent submission
+        run: cargo test --test soak continuous_concurrent -- --ignored --nocapture
+        env:
+          SOAK_SECS: 60
+
+      - name: Soak — continuous pool lifecycle
+        run: cargo test --test soak continuous_pool_lifecycle -- --ignored --nocapture
+        env:
+          SOAK_SECS: 60
+
+      - name: Soak — continuous single worker
+        run: cargo test --test soak continuous_single_worker -- --ignored --nocapture
+        env:
+          SOAK_SECS: 60
+
+  # ── benchmark baseline (main branch only) ─────────────────────────
+  bench-baseline:
+    name: bench-baseline
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write  # needed to push benchmark-history.jsonl
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Save benchmark baseline
+        run: cargo bench --bench throughput --bench overhead --bench scalability --bench work_stealing -- --save-baseline main
+
+      - name: Record benchmark history
+        run: python3 scripts/bench-record.py --commit "${{ github.sha }}"
+
+      - name: Commit history update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add benchmark-history.jsonl
+          git diff --staged --quiet || git commit -m "bench: record ${{ github.sha }}"
+          git push
+
+      - name: Upload baseline artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: target/criterion/
+          retention-days: 90
+
+  # ── benchmark regression check (PR only) ──────────────────────────
+  bench-regression:
+    name: bench-regression
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Download main baseline
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmark-baseline
+          path: target/criterion/
+        continue-on-error: true
+
+      - name: Check for benchmark regressions
+        run: |
+          if [ -d target/criterion/main ]; then
+            python3 scripts/bench-regression.py main --verbose 2>&1 | tee /tmp/bench-result.txt
+            echo "## Benchmark regression check" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/bench-result.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            # If the script failed, propagate the exit code
+            if grep -q "REGRESSIONS EXCEEDING" /tmp/bench-result.txt; then
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "❌ **Benchmarks regressed!** Check details above." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            else
+              echo "" >> "$GITHUB_STEP_SUMMARY"
+              echo "✅ All benchmarks within tolerance." >> "$GITHUB_STEP_SUMMARY"
+            fi
+          else
+            echo "==> No main baseline found. Skipping regression check."
+            echo "    This is normal for the first PR or if benchmarks changed."
+          fi
+
+  # ── benchmark noise characterization (manual or schedule) ─────────
+  bench-noise:
+    name: bench-noise
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Characterize benchmark noise
+        run: ITERATIONS=3 python3 scripts/noise-characterize.py
+
+      - name: Upload noise report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-noise
+          path: target/benchmark-noise.json
+          retention-days: 30
