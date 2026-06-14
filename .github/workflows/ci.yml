@@ -188,6 +188,8 @@ jobs:
     name: bench-regression
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    permissions:
+      actions: read  # needed to download artifacts from other workflow runs
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -196,11 +198,13 @@ jobs:
       - name: Download main baseline
         uses: dawidd6/action-download-artifact@v6
         with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           workflow: ci.yml
           workflow_conclusion: success
           branch: main
           name: benchmark-baseline
           path: target/criterion/
+          if_no_artifact_found: warn
         continue-on-error: true
 
       - name: Check for benchmark regressions
