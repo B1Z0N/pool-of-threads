@@ -207,6 +207,11 @@ jobs:
           if [ -n "$RUN_ID" ]; then
             echo "Found baseline in run $RUN_ID"
             gh run download "$RUN_ID" --name benchmark-baseline --dir target/criterion/
+            # gh extracts to a subdirectory named after the artifact. Criterion expects
+            # it at target/criterion/main. Move it.
+            if [ -d target/criterion/benchmark-baseline ]; then
+              mv target/criterion/benchmark-baseline target/criterion/main
+            fi
           else
             echo "==> No baseline artifact found on main. Skipping regression check."
           fi
