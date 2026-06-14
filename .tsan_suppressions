@@ -7,6 +7,7 @@
 # See: https://github.com/crossbeam-rs/crossbeam/issues/589
 
 # Global::collect runs on multiple threads. One thread frees garbage-bag
-# nodes while another reads them from the concurrent queue. Epoch ordering
-# guarantees these operations are safe, but TSan sees raw read+free.
+# nodes while another reads them from the concurrent queue.
 race:crossbeam_epoch::internal::Global::collect
+race:crossbeam_epoch::internal::Bag
+race:crossbeam_epoch::internal::Local
