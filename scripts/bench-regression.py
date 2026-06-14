@@ -122,10 +122,11 @@ def main():
     output = result.stdout + result.stderr
 
     # Parse changes
-    changes = CHANGE_RE.finditer(output)
+    changes = list(CHANGE_RE.finditer(output))
     benchmarks_found = 0
-    regressions: list[tuple[str, float, float, float]] = []  # (name, lower, est, upper)
-    failures: list[tuple[str, float, float, str]] = []  # (name, change_pct, tolerance, reason)
+    all_results: list[tuple[str, float, float, float]] = []  # (name, lower, est, upper)
+    failures: list[tuple[str, float, float, str]] = []
+    improvements: list[tuple[str, float, str]] = []
 
     for match in changes:
         name = match.group(1)
@@ -133,36 +134,47 @@ def main():
         est = float(match.group(3))
         upper = float(match.group(4))
         benchmarks_found += 1
+        all_results.append((name, lower, est, upper))
 
         tolerance = tolerance_for(name, default_pct, rules)
 
-        # Only the upper bound matters for regression (we care if it got slower).
-        # The lower bound matters for improvements.
         if upper > tolerance:
-            failures.append(
-                (
-                    name,
-                    upper,
-                    tolerance,
-                    f"regressed {upper:+.1f}% (limit: {tolerance:.0f}%)",
-                )
-            )
-        elif upper > 0:
-            regressions.append((name, lower, est, upper))
-        elif verbose:
-            print(f"  {name}: {lower:+.1f}% / {est:+.1f}% / {upper:+.1f}%  "
-                  f"(limit: ±{tolerance:.0f}%) ✓")
+            failures.append((name, upper, tolerance,
+                f"regressed {upper:+.1f}% (limit: {tolerance:.0f}%)"))
+        elif lower < -tolerance:
+            improvements.append((name, lower,
+                f"improved {lower:+.1f}% (limit: ±{tolerance:.0f}%)"))
 
-    # Report regressions within tolerance (informational)
-    if regressions and verbose:
-        print("\n    Regressions within tolerance:")
-        for name, lower, est, upper in regressions:
+    # Always print compact per-benchmark table
+    if all_results:
+        print(f"{'Benchmark':<58} {'Change':>8} {'Tol':>5} {'Status':>10}")
+        print("-" * 85)
+        for name, lower, est, upper in all_results:
             tol = tolerance_for(name, default_pct, rules)
-            print(f"      {name}: {lower:+.1f}% / {est:+.1f}% / {upper:+.1f}%  "
-                  f"(limit: ±{tol:.0f}%)")
+            if upper > tol:
+                status = "✗ REGRESS"
+            elif lower < -tol:
+                status = "✓ improved"
+            elif abs(est) < 0.5:
+                status = "— noise"
+            else:
+                status = "✓ ok"
+            short = name.split("/")[-1] if "/" in name else name
+            print(f"  {short:<55} {est:>+7.1f}% {tol:>4.0f}% {status:>10}")
+        print()
+
+    if verbose:
+        for name, lower, est, upper in all_results:
+            tol = tolerance_for(name, default_pct, rules)
+            print(f"  {name}: {lower:+.1f}% / {est:+.1f}% / {upper:+.1f}%  (limit: ±{tol:.0f}%)")
 
     # Summarize
-    print(f"\n    Benchmarks compared: {benchmarks_found}")
+    print(f"    Benchmarks compared: {benchmarks_found}")
+
+    if improvements and not verbose:
+        print(f"    Improvements: {len(improvements)}")
+        for name, pct, desc in improvements:
+            print(f"      {desc}")
 
     if failures:
         print(f"\n    ══ REGRESSIONS EXCEEDING TOLERANCE ══")
@@ -173,9 +185,6 @@ def main():
         print(f"    Review the changes or update .benchmarks.toml if the regression is expected.")
         sys.exit(1)
     elif not changes:
-        # No change lines means criterion couldn't find the baseline or
-        # the benchmark names don't match. Report but don't fail (could
-        # be the first run on a new machine).
         print("\n    WARNING: No benchmark change data found.")
         print(f"    This may mean the baseline '{baseline}' doesn't exist or")
         print("    benchmark names changed. Baselines are machine-specific.")
