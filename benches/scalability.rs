@@ -19,11 +19,12 @@ fn bench_worker_scaling(c: &mut Criterion) {
     let work_iters = 10_000u64; // ~10 µs per task on modern hardware
     let mut group = c.benchmark_group("scalability/workers");
 
-    for workers in [1, 2, 4, max_workers].iter().copied() {
-        // Skip impossible configs.
-        if workers > max_workers {
-            continue;
-        }
+    // Deduplicate — on a 4-core machine, max_workers == 4 which collides.
+    let mut worker_counts: Vec<usize> = vec![1, 2, 4, max_workers];
+    worker_counts.sort();
+    worker_counts.dedup();
+
+    for workers in worker_counts {
         group.bench_with_input(
             BenchmarkId::new("tasks_per_sec", workers),
             &workers,
