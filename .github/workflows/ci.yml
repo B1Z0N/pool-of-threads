@@ -7,8 +7,8 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Soak tests run daily at 03:00 UTC
-    - cron: '0 3 * * *'
+    # Soak tests run weekly on Sundays at 03:00 UTC
+    - cron: '0 3 * * 0'
 
 env:
   CARGO_TERM_COLOR: always
